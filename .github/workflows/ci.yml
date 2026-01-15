@@ -1,0 +1,83 @@
+name: CI/CD Pipeline 
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  # 1 : tests unitaires
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install
+      - name: Run Unit Tests
+        # on lance spécifiquement le fichier unitaire
+        run: npx jest tests/unit.test.js
+
+  # 2 : tests E2E
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install
+      - name: Run E2E Tests
+        # on lance spécifiquement le fichier E2E
+        run: npx jest tests/e2e.test.js
+
+  # JOB 3 : build & push Docker Hub
+  build-and-push:
+    needs: [unit-tests, e2e-tests] # ne se lance que si les deux jobs de tests sont OK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Build and Push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          # tag de l'image avec ton nom d'utilisateur Docker Hub
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/currency-converter:latest
+
+  # 4 : Déploiement sur VM Azure
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and Deploy on Azure
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AZURE_VM_IP }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            # 1. Récupérer la dernière image
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/currency-converter:latest
+            
+            # 2. Arrêter et supprimer l'ancien conteneur s'il existe (IDEMPOTENCE)
+            sudo docker stop converter-app || true
+            sudo docker rm converter-app || true
+            
+            # 3. Lancer le nouveau conteneur
+            sudo docker run -d --name converter-app -p 80:3000 ${{ secrets.DOCKERHUB_USERNAME }}/currency-converter:latest
+            
+            # 4. Vérification finale (Healthcheck)
+            sleep 5
+            curl -f http://localhost/health || exit 1

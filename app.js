@@ -1,5 +1,5 @@
 const express = require('express');
-const { convertCurrency } = require('.conversion');
+const { convertCurrency } = require('./conversion');
 const app = express();
 
 app.get('/', (req, res) => res.send('hello from leiloooo !'));
