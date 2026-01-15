@@ -10,7 +10,9 @@ function convertCurrency(amount, from, to) {
     const key = `${from}_${to}`;
     const rate = RATES[key];
     
-    return rate ? amount * rate : null;
-}
+    if (!rate) return null;
 
+    const result = amount * rate;
+    return Math.round(result * 100) / 100; 
+}
 module.exports = { convertCurrency };
